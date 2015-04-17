@@ -751,8 +751,6 @@ void XBee::resetResponse() {
 	_response.reset();
 }
 
-XBee::XBee(std::string& deviceName): XBee(deviceName, B115200) {}
-
 XBee::XBee(std::string& deviceName, speed_t baudRate): _response(XBeeResponse()) {
     _pos = 0;
     _escape = false;
@@ -764,17 +762,17 @@ XBee::XBee(std::string& deviceName, speed_t baudRate): _response(XBeeResponse())
     
     // Get non blocking read / write fiel descriptor to the tty
     if ((fd = open(deviceName.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK)) < 0) {
-        // Throw exception, call errno
+        throw std::ios_base::failure(strerror(errno));
     }
 
     // Check the device is a tty
     if (isatty(fd) != 1) {
-        // Throw exception, call errno
+        throw std::ios_base::failure(strerror(errno));
     }
     
     // Disable canonical input processing, disable VTIME and VMIN
     if (fcntl(fd, F_SETFL, FNDELAY) == -1) {
-        // Throw exception, call errno
+        throw std::ios_base::failure(strerror(errno));
     }
 
     // Set parity, size, baud rate and other options
@@ -795,7 +793,7 @@ XBee::XBee(std::string& deviceName, speed_t baudRate): _response(XBeeResponse())
     tcflush(fd, TCIOFLUSH);
 
     if (tcsetattr(fd, TCSANOW, &settings) < 0) {
-        // Throw exception, call errno
+        throw std::ios_base::failure(strerror(errno));
     }
 }
 
@@ -812,24 +810,26 @@ uint8_t XBee::getNextFrameId() {
 }
 
 int XBee::read(uint8_t* byte) {
-    // TODO add error checking
     int recsize = ::read(fd, byte, (size_t)1);
     
     // Check for errors - ignore errors indicating the socket would block
     if (recsize < 0 && errno != EWOULDBLOCK && errno != EAGAIN) {
-        throw std::ios_base::failure(/*"Error receiving message: " + */ strerror(errno));
+        throw std::ios_base::failure(strerror(errno));
     }
 
     return recsize;
 } 
 
 void XBee::flush() {
-    // TODO add error checking
-    fsync(fd);
+    if (fsync(fd) == -1) {
+        throw std::ios_base::failure(strerror(errno));
+    }
 } 
 
 void XBee::write(uint8_t val) {
-    ::write(fd, &val, (size_t)1);
+    if (::write(fd, &val, (size_t)1) == -1) {
+        throw std::ios_base::failure(strerror(errno));
+    }
 }
 
 XBeeResponse& XBee::getResponse() {
