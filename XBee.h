@@ -20,16 +20,18 @@
 #ifndef XBee_h
 #define XBee_h
 
-#if defined(ARDUINO) && ARDUINO >= 100
+/*#if defined(ARDUINO) && ARDUINO >= 100
 	#include "Arduino.h"
 #else
 	#include "WProgram.h"
-#endif
+#endif*/
 
 #include <inttypes.h>
+#include <string>
+#include <termios.h>
 
 #define SERIES_1
-#define SERIES_2
+//#define SERIES_2 - we only need support for Series1
 
 // set to ATAP value of XBee. AP=2 is recommended
 #define ATAP 2
@@ -675,7 +677,13 @@ private:
  */
 class XBee {
 public:
-	XBee();
+    XBee(std::string& device);
+	XBee(std::string& device, speed_t baudRate);
+    
+    /**
+     * Get the FD descriptor used 
+     */
+    int getFD();
 	/**
 	 * Reads all available serial bytes until a packet is parsed, an error occurs, or the buffer is empty.
 	 * You may call <i>xbee</i>.getResponse().isAvailable() after calling this method to determine if
@@ -690,20 +698,11 @@ public:
 	 */
 	void readPacket();
 	/**
-	 * Waits a maximum of <i>timeout</i> milliseconds for a response packet before timing out; returns true if packet is read.
-	 * Returns false if timeout or error occurs.
-	 */
-	bool readPacket(int timeout);
-	/**
 	 * Reads until a packet is received or an error occurs.
 	 * Caution: use this carefully since if you don't get a response, your Arduino code will hang on this
 	 * call forever!! often it's better to use a timeout: readPacket(int)
 	 */
 	void readPacketUntilAvailable();
-	/**
-	 * Starts the serial connection on the specified serial port
-	 */
-	void begin(Stream &serial);
 	void getResponse(XBeeResponse &response);
 	/**
 	 * Returns a reference to the current response
@@ -719,28 +718,28 @@ public:
 	 * Returns a sequential frame id between 1 and 255
 	 */
 	uint8_t getNextFrameId();
-	/**
-	 * Specify the serial port.  Only relevant for Arduinos that support multiple serial ports (e.g. Mega)
-	 */
-	void setSerial(Stream &serial);
 private:
-	bool available();
-	uint8_t read();
+    // Read a byte from the tty.
+    // Returns the amount of bytes read, 0 if no data is available.
+	int read(uint8_t* result);
 	void flush();
 	void write(uint8_t val);
 	void sendByte(uint8_t b, bool escape);
-	void resetResponse();
-	XBeeResponse _response;
-	bool _escape;
-	// current packet position for response.  just a state variable for packet parsing and has no relevance for the response otherwise
-	uint8_t _pos;
+    void resetResponse();
+    
+    // File descriptor to the open serial connection
+    int fd;
+
+    XBeeResponse _response;
+    bool _escape;
+    // current packet position for response.  just a state variable for packet parsing and has no relevance for the response otherwise
+    uint8_t _pos;
 	// last byte read
 	uint8_t b;
-	uint8_t _checksumTotal;
+    uint8_t _checksumTotal;
 	uint8_t _nextFrameId;
 	// buffer for incoming RX packets.  holds only the api specific frame data, starting after the api id byte and prior to checksum
 	uint8_t _responseFrameData[MAX_FRAME_DATA_SIZE];
-	Stream* _serial;
 };
 
 /**

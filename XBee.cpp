@@ -17,15 +17,12 @@
  * along with XBee-Arduino.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <fcntl.h>
+#include <errno.h>
+#include <unistd.h>
+#include <ios>
+#include <string.h>
 #include "XBee.h"
-
-#if defined(ARDUINO) && ARDUINO >= 100
-	#include "Arduino.h"
-#else
-	#include "WProgram.h"
-#endif
-
-#include "HardwareSerial.h"
 
 XBeeResponse::XBeeResponse() {
 
@@ -754,20 +751,52 @@ void XBee::resetResponse() {
 	_response.reset();
 }
 
-XBee::XBee(): _response(XBeeResponse()) {
-        _pos = 0;
-        _escape = false;
-        _checksumTotal = 0;
-        _nextFrameId = 0;
+XBee::XBee(std::string& deviceName): XBee(deviceName, B115200) {}
 
-        _response.init();
-        _response.setFrameData(_responseFrameData);
-		// Contributed by Paul Stoffregen for Teensy support
-#if defined(__AVR_ATmega32U4__) || defined(__MK20DX128__)
-        _serial = &Serial1;
-#else
-        _serial = &Serial;
-#endif
+XBee::XBee(std::string& deviceName, speed_t baudRate): _response(XBeeResponse()) {
+    _pos = 0;
+    _escape = false;
+    _checksumTotal = 0;
+    _nextFrameId = 0;
+
+    _response.init();
+    _response.setFrameData(_responseFrameData);
+    
+    // Get non blocking read / write fiel descriptor to the tty
+    if ((fd = open(deviceName.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK)) < 0) {
+        // Throw exception, call errno
+    }
+
+    // Check the device is a tty
+    if (isatty(fd) != 1) {
+        // Throw exception, call errno
+    }
+    
+    // Disable canonical input processing, disable VTIME and VMIN
+    if (fcntl(fd, F_SETFL, FNDELAY) == -1) {
+        // Throw exception, call errno
+    }
+
+    // Set parity, size, baud rate and other options
+    // TODO - unhardcode this stuff
+    struct termios settings;
+    memset(&settings, 0, sizeof(settings));
+
+    settings.c_cflag = baudRate | CS8 | CLOCAL | CREAD;
+
+    // Ignore parity errors
+    settings.c_iflag = IGNPAR;
+
+    // Raw input / output
+    settings.c_oflag = 0;
+    settings.c_lflag = 0;
+
+    // Discard any remaining junk in the io caches. Doesn't matter too much if this fails
+    tcflush(fd, TCIOFLUSH);
+
+    if (tcsetattr(fd, TCSANOW, &settings) < 0) {
+        // Throw exception, call errno
+    }
 }
 
 uint8_t XBee::getNextFrameId() {
@@ -782,29 +811,25 @@ uint8_t XBee::getNextFrameId() {
 	return _nextFrameId;
 }
 
-// Support for SoftwareSerial. Contributed by Paul Stoffregen
-void XBee::begin(Stream &serial) {
-	_serial = &serial;
-}
+int XBee::read(uint8_t* byte) {
+    // TODO add error checking
+    int recsize = ::read(fd, byte, (size_t)1);
+    
+    // Check for errors - ignore errors indicating the socket would block
+    if (recsize < 0 && errno != EWOULDBLOCK && errno != EAGAIN) {
+        throw std::ios_base::failure(/*"Error receiving message: " + */ strerror(errno));
+    }
 
-void XBee::setSerial(Stream &serial) {
-	_serial = &serial;
-}
-
-bool XBee::available() {
-	return _serial->available();
-}
-
-uint8_t XBee::read() {
-	return _serial->read();
+    return recsize;
 } 
 
 void XBee::flush() {
-	_serial->flush();
+    // TODO add error checking
+    fsync(fd);
 } 
 
 void XBee::write(uint8_t val) {
-	_serial->write(val);
+    ::write(fd, &val, (size_t)1);
 }
 
 XBeeResponse& XBee::getResponse() {
@@ -829,39 +854,14 @@ void XBee::readPacketUntilAvailable() {
 	}
 }
 
-bool XBee::readPacket(int timeout) {
-
-	if (timeout < 0) {
-		return false;
-	}
-
-	unsigned long start = millis();
-
-    while (int((millis() - start)) < timeout) {
-
-     	readPacket();
-
-     	if (getResponse().isAvailable()) {
-     		return true;
-     	} else if (getResponse().isError()) {
-     		return false;
-     	}
-    }
-
-    // timed out
-    return false;
-}
-
 void XBee::readPacket() {
 	// reset previous response
 	if (_response.isAvailable() || _response.isError()) {
 		// discard previous packet and start over
 		resetResponse();
 	}
-
-    while (available()) {
-
-        b = read();
+    
+    while (read(&b)) {
 
         if (_pos > 0 && b == START_BYTE && ATAP == 2) {
         	// new packet start before previous packeted completed -- discard previous packet and start over
@@ -870,14 +870,9 @@ void XBee::readPacket() {
         }
 
 		if (_pos > 0 && b == ESCAPE) {
-			if (available()) {
-				b = read();
-				b = 0x20 ^ b;
-			} else {
-				// escape byte.  next byte will be
-				_escape = true;
-				continue;
-			}
+            // escape byte.  next byte will be
+            _escape = true;
+            continue;
 		}
 
 		if (_escape == true) {
