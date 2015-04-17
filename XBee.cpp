@@ -832,6 +832,10 @@ void XBee::write(uint8_t val) {
     }
 }
 
+int XBee::getFD() {
+    return fd;
+}
+
 XBeeResponse& XBee::getResponse() {
 	return _response;
 }
