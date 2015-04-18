@@ -678,7 +678,7 @@ private:
 class XBee {
 public:
     XBee(std::string& device);
-	XBee(std::string& device, speed_t baudRate);
+	XBee(std::string& device, int baudRate);
     
     /**
      * Get the FD descriptor used 

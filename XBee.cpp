@@ -751,7 +751,7 @@ void XBee::resetResponse() {
 	_response.reset();
 }
 
-XBee::XBee(std::string& deviceName, speed_t baudRate): _response(XBeeResponse()) {
+XBee::XBee(std::string& deviceName, int baudRate): _response(XBeeResponse()) {
     _pos = 0;
     _escape = false;
     _checksumTotal = 0;
@@ -774,13 +774,76 @@ XBee::XBee(std::string& deviceName, speed_t baudRate): _response(XBeeResponse())
     if (fcntl(fd, F_SETFL, FNDELAY) == -1) {
         throw std::ios_base::failure(strerror(errno));
     }
+    
+    // POSIX API only accepts pre-defined constants, convert the numerical baud rate
+    speed_t spd;
+    switch (baudRate) {
+        case 0:
+            spd = B0;
+            break;
+        case 50:
+            spd = B50;
+            break;
+        case 75:
+            spd = B75;
+            break;
+        case 110:
+            spd = B110;
+            break;
+        case 134:
+            spd = B134;
+            break;
+        case 150:
+            spd = B150;
+            break;
+        case 200:
+            spd = B200;
+            break;
+        case 300:
+            spd = B300;
+            break;
+        case 600:
+            spd = B600;
+            break;
+        case 1200:
+            spd = B1200;
+            break;
+        case 1800:
+            spd = B1800;
+            break;
+        case 2400:
+            spd = B2400;
+            break;
+        case 4800:
+            spd = B4800;
+            break;
+        case 9600:
+            spd = B9600;
+            break;
+        case 19200:
+            spd = B19200;
+            break;
+        case 38400:
+            spd = B38400;
+            break;
+        case 57600:
+            spd = B57600;
+            break;
+        case 115200:
+            spd = B115200;
+            break;
+        default:
+            throw std::ios_base::failure("Unsupported Baud Rate " + std::to_string(baudRate));
+
+    }
+
 
     // Set parity, size, baud rate and other options
     // TODO - unhardcode this stuff
     struct termios settings;
     memset(&settings, 0, sizeof(settings));
 
-    settings.c_cflag = baudRate | CS8 | CLOCAL | CREAD;
+    settings.c_cflag = spd | CS8 | CLOCAL | CREAD;
 
     // Ignore parity errors
     settings.c_iflag = IGNPAR;
@@ -865,7 +928,7 @@ void XBee::readPacket() {
 		resetResponse();
 	}
     
-    while (read(&b)) {
+    while (read(&b) > 0) {
 
         if (_pos > 0 && b == START_BYTE && ATAP == 2) {
         	// new packet start before previous packeted completed -- discard previous packet and start over
