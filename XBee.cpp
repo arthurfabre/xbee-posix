@@ -884,9 +884,7 @@ int XBee::read(uint8_t* byte) {
 } 
 
 void XBee::flush() {
-    if (fsync(fd) == -1) {
-        throw std::ios_base::failure(strerror(errno));
-    }
+    // Do nothing - writes are not buffured
 } 
 
 void XBee::write(uint8_t val) {
